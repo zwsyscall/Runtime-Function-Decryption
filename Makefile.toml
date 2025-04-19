@@ -1,0 +1,16 @@
+
+[tasks.build]
+command = "cargo"
+args = ["build"]
+
+[tasks.post-build]
+command = "cargo"
+args = ["build", "--manifest-path=build\\Cargo.toml"]
+
+[tasks.run-post-build]
+command = "cargo"
+args = ["run", "--manifest-path=build\\Cargo.toml"]
+
+
+[tasks.dev]
+dependencies = ["build", "post-build", "run-post-build"]
