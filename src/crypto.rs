@@ -1,10 +1,21 @@
+use std::mem::ManuallyDrop;
+
 use aes_gcm::{
     aead::{AeadMutInPlace, KeyInit},
     Aes256Gcm, Key,
 };
+
+use chacha20::cipher::{KeyIvInit, StreamCipher};
+use chacha20::ChaCha20;
+
 use sha2::{Digest, Sha256};
 
 use anyhow::bail;
+
+pub enum CryptoType {
+    ChaCha20,
+    AES256,
+}
 
 pub fn checksum(data: &[u8], checksum: &[u8]) -> bool {
     let mut hasher = Sha256::new();
@@ -13,15 +24,42 @@ pub fn checksum(data: &[u8], checksum: &[u8]) -> bool {
     &created_hash == checksum
 }
 
-pub fn decrypt_memory(ptr: *mut u8, len: usize, capacity: usize, key: [u8; 32], nonce: [u8; 12]) -> anyhow::Result<()> {
-    let mut data_vector = unsafe { Vec::from_raw_parts(ptr, len, capacity) };
-    match decrypt_in_place(&mut data_vector, key, nonce) {
-        Err(e) => bail!("{}", e),
-        Ok(_) => Ok(()),
+pub fn decrypt_memory(crypto: CryptoType, ptr: *mut u8, len: usize, capacity: usize, key: [u8; 32], nonce: [u8; 12]) -> anyhow::Result<()> {
+    let mut data_vector = ManuallyDrop::new(unsafe { Vec::from_raw_parts(ptr, len, capacity) });
+
+    match crypto {
+        CryptoType::AES256 => match aes_decrypt_in_place(&mut data_vector, key, nonce) {
+            Err(e) => bail!("{}", e),
+            Ok(_) => Ok(()),
+        },
+        CryptoType::ChaCha20 => {
+            chacha20_operate_in_place(&mut data_vector, key, nonce);
+            Ok(())
+        }
     }
 }
 
-pub fn decrypt_in_place(block: &mut Vec<u8>, key: [u8; 32], nonce: [u8; 12]) -> Result<(), aes_gcm::Error> {
+pub fn encrypt_memory(crypto: CryptoType, ptr: *mut u8, len: usize, capacity: usize, key: [u8; 32], nonce: [u8; 12]) -> anyhow::Result<()> {
+    let mut data_vector = ManuallyDrop::new(unsafe { Vec::from_raw_parts(ptr, len, capacity) });
+
+    match crypto {
+        CryptoType::AES256 => match aes_encrypt_in_place(&mut data_vector, key, nonce) {
+            Err(e) => bail!("{}", e),
+            Ok(_) => Ok(()),
+        },
+        CryptoType::ChaCha20 => {
+            chacha20_operate_in_place(&mut data_vector, key, nonce);
+            Ok(())
+        }
+    }
+}
+
+fn chacha20_operate_in_place(buffer: &mut Vec<u8>, key: [u8; 32], nonce: [u8; 12]) {
+    let mut cipher = ChaCha20::new(&key.into(), &nonce.into());
+    cipher.apply_keystream(buffer);
+}
+
+fn aes_decrypt_in_place(block: &mut Vec<u8>, key: [u8; 32], nonce: [u8; 12]) -> Result<(), aes_gcm::Error> {
     let aes_key = Key::<Aes256Gcm>::from_slice(&key);
     let mut cipher = Aes256Gcm::new(&aes_key);
     let nonce = aes_gcm::aead::generic_array::GenericArray::from_slice(&nonce);
@@ -30,7 +68,7 @@ pub fn decrypt_in_place(block: &mut Vec<u8>, key: [u8; 32], nonce: [u8; 12]) -> 
     Ok(())
 }
 
-pub fn encrypt_in_place(block: &mut Vec<u8>, key: [u8; 32], nonce: [u8; 12]) -> Result<(), aes_gcm::Error> {
+fn aes_encrypt_in_place(block: &mut Vec<u8>, key: [u8; 32], nonce: [u8; 12]) -> Result<(), aes_gcm::Error> {
     let aes_key = Key::<Aes256Gcm>::from_slice(&key);
     let mut cipher = Aes256Gcm::new(&aes_key);
     let nonce = aes_gcm::aead::generic_array::GenericArray::from_slice(&nonce);
@@ -48,7 +86,7 @@ mod tests {
         let mut test_vector = Vec::from("Hi! How is it going guys. This is a test message :^)".as_bytes());
         let key = b"This key is super secret! Nope !";
         let nonce = b"Hi, I'm test";
-        assert!(encrypt_in_place(&mut test_vector, *key, *nonce).is_ok());
+        assert!(aes_encrypt_in_place(&mut test_vector, *key, *nonce).is_ok());
         assert_eq!(
             test_vector,
             [
@@ -66,13 +104,12 @@ mod tests {
         ];
         let key = b"This key is super secret! Nope !";
         let nonce = b"Hi, I'm test";
-        assert!(decrypt_in_place(&mut test_vector, *key, *nonce).is_ok());
+        assert!(aes_decrypt_in_place(&mut test_vector, *key, *nonce).is_ok());
         assert_eq!(test_vector, "Hi! How is it going guys. This is a test message :^)".as_bytes())
     }
 
     #[test]
     fn test_decrypt_in_memory() {
-        use std::mem::ManuallyDrop;
         use std::slice;
 
         // prevent double free because (decrypt_memory takes ownership of this memory region)
@@ -83,7 +120,7 @@ mod tests {
 
         let key = *b"This key is super secret! Nope !";
         let nonce = *b"Hi, I'm test";
-        assert!(decrypt_memory(test_vector.as_mut_ptr(), test_vector.len(), test_vector.capacity(), key, nonce).is_ok());
+        assert!(decrypt_memory(CryptoType::AES256, test_vector.as_mut_ptr(), test_vector.len(), test_vector.capacity(), key, nonce).is_ok());
 
         // We reduce the length by 16 here to remove the tag_len
         let plaintext_len = test_vector.len().checked_sub(16).expect("ciphertext must be at least TAG_LEN bytes");
