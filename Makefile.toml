@@ -11,6 +11,9 @@ args = ["build", "--manifest-path=build\\Cargo.toml"]
 command = "cargo"
 args = ["run", "--manifest-path=build\\Cargo.toml"]
 
+[tasks.run]
+command = "cargo"
+args = ["run"]
 
 [tasks.dev]
-dependencies = ["build", "post-build", "run-post-build"]
+dependencies = ["build", "post-build", "run-post-build", "run"]

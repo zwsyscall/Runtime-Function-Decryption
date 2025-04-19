@@ -28,6 +28,7 @@ fn find_text_offset(path: &std::path::PathBuf) -> Option<(u32, u32)> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Fix these
     let binary_name = "general_inj";
     let profile = "debug";
     let pdb_path = Path::new("target").join(&profile).join(format!("{}.pdb", &binary_name));
@@ -67,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     Ok(_) => { /* skip */ }
 
-                    Err(pdb::Error::UnimplementedSymbolKind(kind)) => {
+                    Err(pdb::Error::UnimplementedSymbolKind(_)) => {
                         continue;
                     }
 
@@ -76,13 +77,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+
     let mut file_handle = File::options().read(true).write(true).open(exe_path)?;
     let key = b"testestestestestestestestesteste";
     let paedophile = b"testestestes";
 
+    println!("[-] Encrypting {} functions with key {:02x?}", functions.len(), &key);
     for function in functions {
-        println!("Encrypting {} at {:0x}", &function.name, &function.address);
+        println!("[-] Function: {} -> {:#0x}", &function.name, &function.address);
         encryption::encrypt_function(&mut file_handle, function.address.into(), function.size as usize, &key, &paedophile)?;
+        println!(" \\_ Encrypted {} bytes.", function.size);
     }
 
     Ok(())

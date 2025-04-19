@@ -10,12 +10,9 @@ pub fn encrypt_function(file: &mut File, offset: u64, len: usize, key: &[u8; 32]
     let mut buffer = vec![0u8; len];
     file.read_exact(&mut buffer)?;
 
-    println!("Read {} bytes from {:0x?}", len, offset);
-    println!("Before encryption: {:0x?}", &buffer);
     let mut cipher = ChaCha20::new(key.into(), nonce.into());
 
     cipher.apply_keystream(&mut buffer);
-    println!("After encryption: {:0x?}", &buffer);
 
     file.seek(SeekFrom::Start(offset))?;
     file.write_all(&buffer)?;
