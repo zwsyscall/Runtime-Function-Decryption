@@ -6,7 +6,6 @@ use std::path::Path;
 
 mod function_manipulation;
 
-#[derive(serde::Serialize)]
 struct Function {
     name: String,
     address: u32,
