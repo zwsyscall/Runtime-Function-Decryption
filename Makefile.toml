@@ -1,19 +1,53 @@
+[env]
+EXECUTABLE_NAME = "runtime_function_decryption"
+MODE = "debug"
+MODE_ARGS = ""
+ENCRYPTED_FUNCTIONS = "encrypted_functions"
 
-[tasks.build]
+[tasks.clean]
 command = "cargo"
-args = ["build"]
+args = ["clean", "-p", "${EXECUTABLE_NAME}"]
+
+[tasks.build-project]
+command = "cargo"
+args = ["build", "@@remove-empty(MODE_ARGS)"]
 
 [tasks.post-build]
 command = "cargo"
-args = ["build", "--manifest-path=build\\Cargo.toml"]
+args = [
+  "build",
+  "--manifest-path=build\\post_build\\Cargo.toml",
+  "@@remove-empty(MODE_ARGS)"
+]
 
 [tasks.run-post-build]
 command = "cargo"
-args = ["run", "--manifest-path=build\\Cargo.toml"]
+args = [
+  "run",
+  "--manifest-path=build\\post_build\\Cargo.toml",
+  "@@remove-empty(MODE_ARGS)",
+  "${EXECUTABLE_NAME}"
+]
 
 [tasks.run]
 command = "cargo"
-args = ["run"]
+args = ["run", "@@remove-empty(MODE_ARGS)"]
 
-[tasks.dev]
-dependencies = ["build", "post-build", "run-post-build", "run"]
+[tasks.debug]
+dependencies = [
+  "clean",
+  "build-project",
+  "post-build",
+  "run-post-build",
+  "run"
+]
+
+[tasks.release]
+dependencies = [
+  "clean",
+  "build-project",
+  "post-build",
+  "run-post-build",
+  "run"
+]
+env = { MODE = "release", MODE_ARGS = "--release" }
