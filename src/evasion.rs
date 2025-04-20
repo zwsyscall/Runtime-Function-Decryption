@@ -1,68 +1,66 @@
-// https://microsoft.github.io/windows-rs/features/#/0.59.0/search
-use std::{arch::asm, hint::black_box};
-use windows::Win32::System::{
-    Diagnostics::Debug::{GetThreadContext, SetThreadContext, CONTEXT},
-    Threading::{OpenThread, THREAD_GET_CONTEXT, THREAD_SET_CONTEXT},
-};
+#[macro_export]
+macro_rules! encrypted_call {
+    ($func:path, $($arg:expr), *) => {{
+        {
+            let function_body_start = unsafe { ($func as *mut u8).add(2) };
+            let mut old_protect = windows::Win32::System::Memory::PAGE_EXECUTE_READWRITE;
 
-#[inline(never)]
-#[export_name = "rdtsc"]
-pub extern "C" fn rdtsc() -> u64 {
-    let mut edx: u32;
-    let mut eax: u32;
-    unsafe {
-        asm!(
-            "MFENCE",
-            "LFENCE",
-            "rdtsc",
-            out("edx") edx,
-            out("eax") eax,
-        );
-    }
-    ((edx as u64) << 32) | (eax as u64)
-}
+            // Save old protections
+            unsafe {
+                windows::Win32::System::Memory::VirtualProtect(
+                    $func as *const c_void,
+                    6,
+                    windows::Win32::System::Memory::PAGE_EXECUTE_READWRITE,
+                    &mut old_protect as *mut _,
+                ).unwrap()
+            };
 
-pub fn cpu_timing() -> usize {
-    let time_1 = rdtsc();
-    black_box(1 + 5);
-    let time_2 = rdtsc();
-    (time_2 - time_1) as usize
-}
+            // Decrypt the bytes containing the function's length
+            crypto::chacha20_operate_in_place(function_body_start, 4, 4, *keys::KEY, *keys::NONCE);
 
-pub fn get_main_thread_id() -> usize {
-    let thread_id: usize;
-    unsafe {
-        asm!(
-            "mov {0}, gs:[0x30]", // Load TEB base into x
-            "add {0}, 0x48",      // Add offset to ClientId.UniqueThread
-            lateout(reg) thread_id,
-        );
-    }
-    thread_id
-}
+            // Read the function's length
+            let function_length = unsafe {
+                let length_bytes = std::mem::ManuallyDrop::new(Vec::from_raw_parts(function_body_start, 4, 4));
+                u32::from_le_bytes(length_bytes.as_slice().try_into().unwrap()) as usize
+            };
 
-pub fn clear_hw_breakpoints() -> anyhow::Result<()> {
-    let main_thred_id: u32 = get_main_thread_id().try_into()?;
-    let thread_handle = unsafe { OpenThread(THREAD_GET_CONTEXT | THREAD_SET_CONTEXT, false, main_thred_id) }?;
+            // Modify the protections on the rest of the function to be RWX
+            unsafe {
+                windows::Win32::System::Memory::VirtualProtect(
+                    $func as *const c_void,
+                    function_length,
+                    windows::Win32::System::Memory::PAGE_EXECUTE_READWRITE,
+                    &mut windows::Win32::System::Memory::PAGE_PROTECTION_FLAGS(0) as *mut _,
+                ).unwrap()
+            };
 
-    // Compiler doesn't understand
-    #[allow(unused_mut)]
-    let mut thread_context: *mut CONTEXT = std::ptr::null_mut();
-    unsafe {
-        GetThreadContext(thread_handle, thread_context)?;
-        (*thread_context).Dr0 = 0;
-        (*thread_context).Dr1 = 0;
-        (*thread_context).Dr2 = 0;
-        (*thread_context).Dr3 = 0;
-        SetThreadContext(thread_handle, thread_context)?;
-    }
+            // Modify the protections on the rest of the function to be RWX
+            crypto::chacha20_operate_in_place(
+                function_body_start,
+                function_length - 2,
+                function_length - 2,
+                *keys::KEY,
+                *keys::NONCE,
+            );
 
-    Ok(())
-}
+            let r = $func($($arg), *);
 
-fn encrypted_call<F, R>(f: F) -> R
-where
-    F: FnOnce() -> R,
-{
-    f()
+            // Re-encrypt the size bytes so they are left intact for the next time
+            crypto::chacha20_operate_in_place(function_body_start, 4, 4, *keys::KEY, *keys::NONCE);
+
+            // Re-encrypt the whole function.
+            crypto::chacha20_operate_in_place(
+                function_body_start,
+                function_length - 2,
+                function_length - 2,
+                *keys::KEY,
+                *keys::NONCE,
+            );
+
+            // Return the old protections
+            unsafe { windows::Win32::System::Memory::VirtualProtect($func as *const c_void, function_length, old_protect, &mut old_protect as *mut _).unwrap() };
+
+            r
+        }
+    }};
 }
