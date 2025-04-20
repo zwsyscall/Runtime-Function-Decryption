@@ -8,7 +8,7 @@ macro_rules! encrypted_call {
             // Save old protections
             unsafe {
                 windows::Win32::System::Memory::VirtualProtect(
-                    $func as *const c_void,
+                    $func as *const std::ffi::c_void,
                     6,
                     windows::Win32::System::Memory::PAGE_EXECUTE_READWRITE,
                     &mut old_protect as *mut _,
@@ -27,7 +27,7 @@ macro_rules! encrypted_call {
             // Modify the protections on the rest of the function to be RWX
             unsafe {
                 windows::Win32::System::Memory::VirtualProtect(
-                    $func as *const c_void,
+                    $func as *const std::ffi::c_void,
                     function_length,
                     windows::Win32::System::Memory::PAGE_EXECUTE_READWRITE,
                     &mut windows::Win32::System::Memory::PAGE_PROTECTION_FLAGS(0) as *mut _,
@@ -58,7 +58,7 @@ macro_rules! encrypted_call {
             );
 
             // Return the old protections
-            unsafe { windows::Win32::System::Memory::VirtualProtect($func as *const c_void, function_length, old_protect, &mut old_protect as *mut _).unwrap() };
+            unsafe { windows::Win32::System::Memory::VirtualProtect($func as *const std::ffi::c_void, function_length, old_protect, &mut old_protect as *mut _).unwrap() };
 
             r
         }
