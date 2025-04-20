@@ -13,6 +13,9 @@ struct Function {
     size: u32,
 }
 
+// Fetch the key and nonce from a build script
+include!("../../../src/keys.rs");
+
 fn find_text_offset(path: &std::path::PathBuf) -> Option<(u32, u32)> {
     let buffer = std::fs::read(&path).unwrap();
 
@@ -28,9 +31,11 @@ fn find_text_offset(path: &std::path::PathBuf) -> Option<(u32, u32)> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Change these to be env eventually :^)
-    let binary_name = "general_inj";
-    let profile = "debug";
+    let args: Vec<String> = env::args().collect();
+    let profile = env::var("MODE").unwrap();
+    let function_encryption_text = env::var("ENCRYPTED_FUNCTIONS").unwrap();
+    let binary_name = args.get(1).cloned().unwrap_or_else(|| "encrypted_functions".to_string());
+
     let pdb_path = Path::new("target").join(&profile).join(format!("{}.pdb", &binary_name));
     let exe_path = Path::new("target").join(&profile).join(format!("{}.exe", &binary_name));
 
@@ -56,8 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let name = data.name.to_string();
                         let size = data.len;
                         let rva = data.offset.to_rva(&address_map).unwrap().0;
-                        if name.contains("evasion") {
-                            println!("Adding {} to be encrypted", name);
+                        if name.contains(&function_encryption_text) {
                             functions.push(Function {
                                 name: name.into(),
                                 address: rva - 0x1000 + text_offset,
@@ -79,13 +83,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut file_handle = File::options().read(true).write(true).open(exe_path)?;
-    let key = b"testestestestestestestestesteste";
-    let paedophile = b"testestestes";
-
-    println!("[-] Encrypting {} functions with key {:02x?}", functions.len(), &key);
+    println!("[+] Encrypting {} functions", functions.len());
     for function in functions {
-        println!("[-] Function: {} -> {:#0x}", &function.name, &function.address);
-        function_manipulation::encrypt_function(&mut file_handle, function.address.into(), function.size as usize, &key, &paedophile)?;
+        println!("[+] Function: {} -> {:#0x}", &function.name, &function.address);
+        function_manipulation::encrypt_function(&mut file_handle, function.address.into(), function.size as usize, &KEY, &NONCE)?;
         println!(" \\_ Encrypted {} bytes.", function.size);
     }
 
