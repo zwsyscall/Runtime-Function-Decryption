@@ -1,0 +1,2 @@
+pub static KEY: &[u8; 32] = b"TESTESTESTESTESTESTESTESTESTESTE";
+pub static NONCE: &[u8; 12] = b"TESTESTESTES";
