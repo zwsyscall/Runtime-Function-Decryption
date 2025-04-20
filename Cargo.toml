@@ -1,14 +1,16 @@
 [package]
-name = "general_inj"
+name = "runtime_function_decryption"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-aes-gcm = "0.10.3"
 anyhow = "1.0.98"
 chacha20 = "0.9.1"
 sha2 = "0.10.8"
-windows = { version = "0.61.1", features = ["Win32", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel", "Win32_System_Memory", "Win32_System_Threading"] }
+windows = { version = "0.61.1", features = ["Win32", "Win32_Security", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel", "Win32_System_Memory", "Win32_System_Threading"] }
 
 [profile.release]
 debug = true
+
+[build-dependencies]
+rand = "0.9.1"
